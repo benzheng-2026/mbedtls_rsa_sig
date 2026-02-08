@@ -11,13 +11,14 @@
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3) {
-        printf("Usage: %s <filename> <private_key_file>\n", argv[0]);
+    if (argc != 4) {
+        printf("Usage: %s <filename> <private_key_file> <signature_output_file>\n", argv[0]);
         return -1;
     }
 
     const char *filename = argv[1];
     const char *key_file = argv[2];
+    const char *sig_file = argv[3]; // 签名输出文件
 
     // 打开待签名的文件
     FILE *file = fopen(filename, "rb");
@@ -78,6 +79,13 @@ int main(int argc, char *argv[])
     mbedtls_sha256_finish_ret(&sha256_ctx, hash); // 完成哈希计算
     mbedtls_sha256_free(&sha256_ctx);
 
+    // 打印文件的 SHA256 哈希值
+    printf("File SHA256 Hash:\n");
+    for (int i = 0; i < 32; i++) {
+        printf("%02x", hash[i]);
+    }
+    printf("\n");
+
     // 使用 RSA 私钥对哈希值进行签名
     unsigned char signature[MBEDTLS_MPI_MAX_SIZE];
     size_t sig_len;
@@ -96,6 +104,23 @@ int main(int argc, char *argv[])
         printf("%02x", signature[i]);
     }
     printf("\n");
+
+    // 将签名保存为二进制文件
+    FILE *sig_output = fopen(sig_file, "wb");
+    if (!sig_output) {
+        perror("Failed to open signature output file");
+        ret = -1;
+        goto cleanup;
+    }
+
+    if (fwrite(signature, 1, sig_len, sig_output) != sig_len) {
+        perror("Failed to write signature to file");
+        ret = -1;
+        fclose(sig_output);
+        goto cleanup;
+    }
+
+    fclose(sig_output);
 
     cleanup:
     mbedtls_pk_free(&pk);
