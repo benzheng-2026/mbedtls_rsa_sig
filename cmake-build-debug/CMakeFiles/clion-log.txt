@@ -1,0 +1,4 @@
+"D:\Program Files\JetBrains\CLion 2022.2.4\bin\cmake\win\bin\cmake.exe" -DCMAKE_BUILD_TYPE=Debug -G "CodeBlocks - MinGW Makefiles" -S E:\03_chaopeng\04_freetech\02_clion\mbedtls_rsa_sig -B E:\03_chaopeng\04_freetech\02_clion\mbedtls_rsa_sig\cmake-build-debug
+-- Configuring done
+-- Generating done
+-- Build files have been written to: E:/03_chaopeng/04_freetech/02_clion/mbedtls_rsa_sig/cmake-build-debug
