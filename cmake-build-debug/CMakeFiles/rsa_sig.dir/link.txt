@@ -1,3 +1,3 @@
 "D:\Program Files\JetBrains\CLion 2022.2.4\bin\cmake\win\bin\cmake.exe" -E rm -f CMakeFiles\rsa_sig.dir/objects.a
 "D:\Program Files\JetBrains\CLion 2022.2.4\bin\mingw\bin\ar.exe" qc CMakeFiles\rsa_sig.dir/objects.a @CMakeFiles\rsa_sig.dir\objects1.rsp
-"D:\Program Files\JetBrains\CLion 2022.2.4\bin\mingw\bin\gcc.exe" -g -Wl,--whole-archive CMakeFiles\rsa_sig.dir/objects.a -Wl,--no-whole-archive -o rsa_sig.exe -Wl,--out-implib,librsa_sig.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\rsa_sig.dir\linklibs.rsp
+"D:\Program Files\JetBrains\CLion 2022.2.4\bin\mingw\bin\gcc.exe" -g -Wl,--whole-archive CMakeFiles\rsa_sig.dir/objects.a -Wl,--no-whole-archive -o rsa_encrypt_v15.exe -Wl,--out-implib,librsa_encrypt_v15.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\rsa_sig.dir\linklibs.rsp
