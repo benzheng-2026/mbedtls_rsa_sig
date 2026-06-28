@@ -16,3 +16,14 @@ openssl rsa -pubout -in private_key.pem -out public_key.pem
 # 2. 编译加密程序
 编译使用CMake，不要使用手动gcc
 # 3. 运行加密程序
+
+```plantuml
+@startmindmap
+* PKCS#1
+** Encryption schemes
+*** RSARSAES-PKCS1-v1_5
+*** RSAES-OAEP
+** Signature schemes
+*** RSASSA-PKCS1-v1_5
+*** RSASSA-PSS
+@endmindmap

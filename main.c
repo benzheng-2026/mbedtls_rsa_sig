@@ -19,7 +19,9 @@ int rsa_public_encrypt(const char *pub_key_path,
     mbedtls_ctr_drbg_context ctr_drbg;
 
     const char *pers = "rsa_pk_encrypt";
-
+    // 初始化PK上下文
+    // 初始化CTR_DRBG上下文
+    // 初始化熵上下文
     mbedtls_pk_init(&pk);
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
