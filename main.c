@@ -1,117 +1,204 @@
-#include "mbedtls/pk.h"
-#include "mbedtls/entropy.h"
-#include "mbedtls/ctr_drbg.h"
-#include "mbedtls/error.h"
-
+#include "mbedtls/aes.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-int rsa_public_encrypt(const char *pub_key_path,
-                       const unsigned char *input,
-                       size_t input_len,
-                       unsigned char *output,
-                       size_t *output_len)
+#define AES_KEY_SIZE   16
+#define AES_BLOCK_SIZE 16
+
+static const unsigned char key[AES_KEY_SIZE] =
+        {
+                '0','1','2','3',
+                '4','5','6','7',
+                '8','9','a','b',
+                'c','d','e','f'
+        };
+
+static const unsigned char iv[AES_BLOCK_SIZE] =
+        {
+                'f','e','d','c',
+                'b','a','9','8',
+                '7','6','5','4',
+                '3','2','1','0'
+        };
+
+void print_hex(const char *title,
+               const unsigned char *buf,
+               size_t len)
 {
-    int ret;
+    printf("%s (%zu bytes)\n", title, len);
 
-    mbedtls_pk_context pk;
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
+    for(size_t i=0;i<len;i++)
+    {
+        printf("%02X ", buf[i]);
 
-    const char *pers = "rsa_pk_encrypt";
-    // 初始化PK上下文
-    // 初始化CTR_DRBG上下文
-    // 初始化熵上下文
-    mbedtls_pk_init(&pk);
-    mbedtls_entropy_init(&entropy);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
+        if((i+1)%16==0)
+            printf("\n");
+    }
 
-    // RNG初始化（必须）
-    ret = mbedtls_ctr_drbg_seed(
-            &ctr_drbg,
-            mbedtls_entropy_func,
-            &entropy,
-            (const unsigned char *)pers,
-            strlen(pers)
-    );
-    if (ret != 0) {
-        printf("RNG init failed\n");
+    if(len%16)
+        printf("\n");
+
+    printf("\n");
+}
+size_t pkcs7_padding(const unsigned char *input,
+                     size_t input_len,
+                     unsigned char *output)
+{
+    size_t padding = AES_BLOCK_SIZE - input_len % AES_BLOCK_SIZE;
+
+    if(padding==0)
+        padding=AES_BLOCK_SIZE;
+
+    memcpy(output,input,input_len);
+
+    for(size_t i=0;i<padding;i++)
+        output[input_len+i]=(unsigned char)padding;
+
+    return input_len+padding;
+}
+size_t pkcs7_unpadding(unsigned char *buf,
+                       size_t len)
+{
+    if(len==0)
+        return 0;
+
+    unsigned char pad=buf[len-1];
+
+    if(pad==0 || pad>16)
+        return 0;
+
+    for(size_t i=0;i<pad;i++)
+    {
+        if(buf[len-1-i]!=pad)
+            return 0;
+    }
+
+    return len-pad;
+}
+int aes_encrypt(const unsigned char *input,
+                size_t len,
+                unsigned char *output)
+{
+    mbedtls_aes_context aes;
+
+    unsigned char iv_copy[AES_BLOCK_SIZE];
+
+    memcpy(iv_copy, iv, AES_BLOCK_SIZE);
+
+    mbedtls_aes_init(&aes);
+
+    int ret = mbedtls_aes_setkey_enc(&aes, key, 128);
+    if(ret != 0)
+    {
+        mbedtls_aes_free(&aes);
         return ret;
     }
 
-    // 读取公钥（2.16支持这个API）
-    ret = mbedtls_pk_parse_public_keyfile(&pk, pub_key_path);
-    if (ret != 0) {
-        char err[128];
-        mbedtls_strerror(ret, err, sizeof(err));
-        printf("PK parse failed: %s\n", err);
-        goto exit;
-    }
+    ret = mbedtls_aes_crypt_cbc(&aes,
+                                MBEDTLS_AES_ENCRYPT,
+                                len,
+                                iv_copy,
+                                input,
+                                output);
 
-    // 检查是不是RSA
-    if (!mbedtls_pk_can_do(&pk, MBEDTLS_PK_RSA)) {
-        printf("Not RSA key\n");
-        ret = -1;
-        goto exit;
-    }
-
-    size_t olen = 0;
-
-    // RSA 加密（PKCS#1 v1.5）
-    ret = mbedtls_pk_encrypt(
-            &pk,
-            input,
-            input_len,
-            output,
-            &olen,
-            256,   // 2048-bit RSA = 256 bytes
-            mbedtls_ctr_drbg_random,
-            &ctr_drbg
-    );
-
-    if (ret == 0) {
-        *output_len = olen;
-    } else {
-        char err[128];
-        mbedtls_strerror(ret, err, sizeof(err));
-        printf("Encrypt failed: %s\n", err);
-    }
-
-    exit:
-    mbedtls_pk_free(&pk);
-    mbedtls_ctr_drbg_free(&ctr_drbg);
-    mbedtls_entropy_free(&entropy);
+    mbedtls_aes_free(&aes);
 
     return ret;
 }
-
-int main()
+int aes_decrypt(const unsigned char *input,
+                size_t len,
+                unsigned char *output)
 {
-    // 加密公钥路径
-    const char *pub_key = "E:/03_chaopeng/04_freetech/02_clion/mbedtls_rsa_sig/key/public_key.pem";
-    // 明文数据
-    unsigned char plaintext[] = "Hello RSA mbedTLS 2.16";
-   // 密文数据变量
-    unsigned char ciphertext[256];
-    // 密文数据长度变量
-    size_t ciphertext_len = 0;
+    mbedtls_aes_context aes;
 
-    int ret = rsa_public_encrypt(
-            pub_key,
-            plaintext,
-            strlen((char *)plaintext),
-            ciphertext,
-            &ciphertext_len
-    );
+    unsigned char iv_copy[16];
 
-    if (ret == 0) {
-        printf("Encrypt OK!\nHEX:\n");
+    memcpy(iv_copy,iv,16);
 
-        for (size_t i = 0; i < ciphertext_len; i++) {
-            printf("%02X", ciphertext[i]);
-        }
-        printf("\n");
-    }
+    mbedtls_aes_init(&aes);
+
+    int ret=mbedtls_aes_setkey_dec(&aes,key,128);
+
+    if(ret!=0)
+        return ret;
+
+    ret=mbedtls_aes_crypt_cbc(&aes,
+                              MBEDTLS_AES_DECRYPT,
+                              len,
+                              iv_copy,
+                              input,
+                              output);
+
+    mbedtls_aes_free(&aes);
 
     return ret;
+}
+int main(void)
+{
+     const char *text="12345678123456781234567812345678"; //32bytes，padin
+   //const char *text="12"; //2bytes
+  // const char *text="1234567812345678"; //16bytes
+    size_t plain_len=strlen(text);
+
+    printf("Original:\n%s\n\n",text);
+
+    print_hex("Plain",
+              (const unsigned char*)text,
+              plain_len);
+
+    unsigned char padded[256];
+
+    size_t padded_len=
+            pkcs7_padding(
+                    (const unsigned char*)text,
+                    plain_len,
+                    padded);
+
+    print_hex("After PKCS7 Padding",
+              padded,
+              padded_len);
+
+    unsigned char cipher[256];
+
+    if(aes_encrypt(padded,
+                   padded_len,
+                   cipher)!=0)
+    {
+        printf("encrypt failed\n");
+        return -1;
+    }
+
+    print_hex("Cipher",
+              cipher,
+              padded_len);
+
+    unsigned char decrypted[256];
+
+    if(aes_decrypt(cipher,
+                   padded_len,
+                   decrypted)!=0)
+    {
+        printf("decrypt failed\n");
+        return -1;
+    }
+
+    print_hex("Decrypt(with padding)",
+              decrypted,
+              padded_len);
+
+    size_t real_len=
+            pkcs7_unpadding(
+                    decrypted,
+                    padded_len);
+
+    decrypted[real_len]=0;
+
+    print_hex("After UnPadding",
+              decrypted,
+              real_len);
+
+    printf("Recovered:\n%s\n",decrypted);
+
+    return 0;
 }

@@ -58,7 +58,7 @@
 				</MakeCommands>
 			</Target>
 			<Target title="rsa_sig">
-				<Option output="E:/03_chaopeng/04_freetech/02_clion/mbedtls_rsa_sig/cmake-build-debug/rsa_encrypt_v15.exe" prefix_auto="0" extension_auto="0"/>
+				<Option output="E:/03_chaopeng/04_freetech/02_clion/mbedtls_rsa_sig/cmake-build-debug/AES-128-CBC Padding Test.exe" prefix_auto="0" extension_auto="0"/>
 				<Option working_dir="E:/03_chaopeng/04_freetech/02_clion/mbedtls_rsa_sig/cmake-build-debug"/>
 				<Option object_output="./"/>
 				<Option type="1"/>
@@ -78,7 +78,7 @@
 				</MakeCommands>
 			</Target>
 			<Target title="rsa_sig/fast">
-				<Option output="E:/03_chaopeng/04_freetech/02_clion/mbedtls_rsa_sig/cmake-build-debug/rsa_encrypt_v15.exe" prefix_auto="0" extension_auto="0"/>
+				<Option output="E:/03_chaopeng/04_freetech/02_clion/mbedtls_rsa_sig/cmake-build-debug/AES-128-CBC Padding Test.exe" prefix_auto="0" extension_auto="0"/>
 				<Option working_dir="E:/03_chaopeng/04_freetech/02_clion/mbedtls_rsa_sig/cmake-build-debug"/>
 				<Option object_output="./"/>
 				<Option type="1"/>
