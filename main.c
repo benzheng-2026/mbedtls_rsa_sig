@@ -1,117 +1,126 @@
+#include "mbedtls/rsa.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
+#include "mbedtls/platform.h"
 #include "mbedtls/error.h"
-
-#include <stdio.h>
 #include <string.h>
+#include <stdio.h>
 
-int rsa_public_encrypt(const char *pub_key_path,
-                       const unsigned char *input,
-                       size_t input_len,
-                       unsigned char *output,
-                       size_t *output_len)
-{
+#define PLAINTEXT        "Hello, RSAES-OAEP encryption!"
+#define PLAINTEXT_LEN    strlen(PLAINTEXT)
+#define CIPHERTEXT_BUF   256
+
+#define PRIVATE_KEY_PATH "private_key.pem"
+#define PUBLIC_KEY_PATH  "public_key.pem"
+
+int main(void) {
     int ret;
 
-    mbedtls_pk_context pk;
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_pk_context pk_priv;
+    mbedtls_pk_context pk_pub;
+    mbedtls_rsa_context *rsa_pub;
+    mbedtls_rsa_context *rsa_priv;
+    unsigned char ciphertext[CIPHERTEXT_BUF];
+    unsigned char decrypted[CIPHERTEXT_BUF];
+    size_t decrypted_len;
+    const char *pers = "rsa_oaep_example";
 
-    const char *pers = "rsa_pk_encrypt";
-    // 初始化PK上下文
-    // 初始化CTR_DRBG上下文
-    // 初始化熵上下文
-    mbedtls_pk_init(&pk);
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
+    mbedtls_pk_init(&pk_priv);
+    mbedtls_pk_init(&pk_pub);
 
-    // RNG初始化（必须）
-    ret = mbedtls_ctr_drbg_seed(
-            &ctr_drbg,
-            mbedtls_entropy_func,
-            &entropy,
-            (const unsigned char *)pers,
-            strlen(pers)
-    );
-    if (ret != 0) {
-        printf("RNG init failed\n");
-        return ret;
-    }
-
-    // 读取公钥（2.16支持这个API）
-    ret = mbedtls_pk_parse_public_keyfile(&pk, pub_key_path);
-    if (ret != 0) {
-        char err[128];
-        mbedtls_strerror(ret, err, sizeof(err));
-        printf("PK parse failed: %s\n", err);
+    if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
+                                     (const unsigned char *)pers, strlen(pers))) != 0) {
+        mbedtls_printf("随机数生成器初始化失败: -0x%04X\n", -ret);
         goto exit;
     }
 
-    // 检查是不是RSA
-    if (!mbedtls_pk_can_do(&pk, MBEDTLS_PK_RSA)) {
-        printf("Not RSA key\n");
-        ret = -1;
+    mbedtls_printf("正在从文件加载RSA私钥...\n");
+    ret = mbedtls_pk_parse_keyfile(&pk_priv, PRIVATE_KEY_PATH, NULL);
+    if (ret != 0) {
+        mbedtls_printf("加载私钥失败: -0x%04X\n", -ret);
+        mbedtls_printf("请先使用OpenSSL生成密钥对:\n");
+        mbedtls_printf("  openssl genrsa -out private_key.pem 2048\n");
+        mbedtls_printf("  openssl rsa -in private_key.pem -pubout -out public_key.pem\n");
         goto exit;
     }
 
-    size_t olen = 0;
+    mbedtls_printf("正在从文件加载RSA公钥...\n");
+    ret = mbedtls_pk_parse_public_keyfile(&pk_pub, PUBLIC_KEY_PATH);
+    if (ret != 0) {
+        mbedtls_printf("加载公钥失败: -0x%04X\n", -ret);
+        goto exit;
+    }
 
-    // RSA 加密（PKCS#1 v1.5）
-    ret = mbedtls_pk_encrypt(
-            &pk,
-            input,
-            input_len,
-            output,
-            &olen,
-            256,   // 2048-bit RSA = 256 bytes
-            mbedtls_ctr_drbg_random,
-            &ctr_drbg
+    mbedtls_printf("密钥加载成功！\n");
+    mbedtls_printf("私钥类型: %s\n", mbedtls_pk_get_name(&pk_priv));
+    mbedtls_printf("公钥类型: %s\n", mbedtls_pk_get_name(&pk_pub));
+
+    rsa_pub = mbedtls_pk_rsa(pk_pub);
+    rsa_priv = mbedtls_pk_rsa(pk_priv);
+
+    mbedtls_rsa_set_padding(rsa_pub, MBEDTLS_RSA_PKCS_V21, MBEDTLS_MD_SHA256);
+    mbedtls_rsa_set_padding(rsa_priv, MBEDTLS_RSA_PKCS_V21, MBEDTLS_MD_SHA256);
+
+    mbedtls_printf("\n原始明文: %s\n", PLAINTEXT);
+
+    ret = mbedtls_rsa_rsaes_oaep_encrypt(
+            rsa_pub,
+            mbedtls_ctr_drbg_random, &ctr_drbg,
+            MBEDTLS_RSA_PUBLIC,
+            NULL, 0,
+            PLAINTEXT_LEN,
+            (const unsigned char *)PLAINTEXT,
+            ciphertext
     );
+    if (ret != 0) {
+        mbedtls_printf("加密失败: -0x%04X\n", -ret);
+        goto exit;
+    }
+    mbedtls_printf("加密成功，密文长度: %d字节\n", (int)mbedtls_rsa_get_len(rsa_pub));
 
-    if (ret == 0) {
-        *output_len = olen;
+    mbedtls_printf("密文数据(HEX):\n");
+    for (size_t i = 0; i < mbedtls_rsa_get_len(rsa_pub); i++) {
+        mbedtls_printf("%02X ", ciphertext[i]);
+        if ((i + 1) % 16 == 0) {
+            mbedtls_printf("\n");
+        }
+    }
+    mbedtls_printf("\n");
+
+    ret = mbedtls_rsa_rsaes_oaep_decrypt(
+            rsa_priv,
+            mbedtls_ctr_drbg_random, &ctr_drbg,
+            MBEDTLS_RSA_PRIVATE,
+            NULL, 0,
+            &decrypted_len,
+            ciphertext,
+            decrypted,
+            sizeof(decrypted)
+    );
+    if (ret != 0) {
+        mbedtls_printf("解密失败: -0x%04X\n", -ret);
+        goto exit;
+    }
+
+    decrypted[decrypted_len] = '\0';
+    mbedtls_printf("\n解密结果: %s\n", decrypted);
+    if (strncmp((char *)decrypted, PLAINTEXT, PLAINTEXT_LEN) == 0) {
+        mbedtls_printf("验证成功: 解密结果与原始明文一致\n");
     } else {
-        char err[128];
-        mbedtls_strerror(ret, err, sizeof(err));
-        printf("Encrypt failed: %s\n", err);
+        mbedtls_printf("验证失败: 解密结果与原始明文不一致\n");
+        ret = -1;
     }
 
-    exit:
-    mbedtls_pk_free(&pk);
+exit:
+    mbedtls_pk_free(&pk_pub);
+    mbedtls_pk_free(&pk_priv);
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&entropy);
-
-    return ret;
-}
-
-int main()
-{
-    // 加密公钥路径
-    const char *pub_key = "E:/03_chaopeng/04_freetech/02_clion/mbedtls_rsa_sig/key/public_key.pem";
-    // 明文数据
-    unsigned char plaintext[] = "Hello RSA mbedTLS 2.16";
-   // 密文数据变量
-    unsigned char ciphertext[256];
-    // 密文数据长度变量
-    size_t ciphertext_len = 0;
-
-    int ret = rsa_public_encrypt(
-            pub_key,
-            plaintext,
-            strlen((char *)plaintext),
-            ciphertext,
-            &ciphertext_len
-    );
-
-    if (ret == 0) {
-        printf("Encrypt OK!\nHEX:\n");
-
-        for (size_t i = 0; i < ciphertext_len; i++) {
-            printf("%02X", ciphertext[i]);
-        }
-        printf("\n");
-    }
 
     return ret;
 }

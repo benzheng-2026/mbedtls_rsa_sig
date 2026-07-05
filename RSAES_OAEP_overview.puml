@@ -1,0 +1,27 @@
+@startmindmap
+* RSAES-OAEP 加密流程
+** 1. 准备阶段
+*** 加载公钥 (n, e)
+*** 设置填充模式
+**** PKCS#1 v2.1 (OAEP)
+**** Hash = SHA-256
+*** 准备明文 M
+** 2. OAEP 编码
+*** 计算 lHash = SHA-256(label)
+*** 构造 DB = lHash || PS || 0x01 || M
+*** 生成随机种子 seed
+*** 👇 MGF1 第一次调用
+*** 生成 dbMask = MGF1(seed, k-hLen-1)
+*** 计算 maskedDB = DB ⊕ dbMask
+*** 👇 MGF1 第二次调用
+*** 生成 seedMask = MGF1(maskedDB, hLen)
+*** 计算 maskedSeed = seed ⊕ seedMask
+*** 构造 EM = 0x00 || maskedSeed || maskedDB
+** 3. RSA 公钥运算
+*** OS2IP: EM → 整数 m
+*** RSAEP: c = m^e mod n
+*** I2OSP: c → 字节串 C
+** 4. 输出
+*** 密文 C (256 字节)
+*** 可 Base64 编码传输
+@endmindmap

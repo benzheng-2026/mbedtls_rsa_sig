@@ -23,12 +23,32 @@ openssl rsa -pubout -in private_key.pem -out public_key.pem
 ```plantuml
 @startmindmap
 * PKCS#1
-** Encryption schemes
-*** RSARSAES-PKCS1-v1_5
+**  Key Types
+*** RSA Public Key
+*** RSA Private Key
+**  Data Conversion Primitives （数据转换原语）
+*** I2OSP
+*** OS2IP
+**  Cryptographic Primitives （密码原语）
+*** Encryption and Decryption Primitives（加解密原语）
+**** RSAEP
+**** RSADP
+*** Signature and Verification Primitives（签名验证原语）
+**** RSASP1
+**** RSAVP1
+**  Encryption Schemes（加解密）
 *** RSAES-OAEP
-** Signature schemes
-*** RSASSA-PKCS1-v1_5
+*** RSAES-PKCS1-v1_5
+**  Signature Scheme with Appendix（签名方案）
 *** RSASSA-PSS
+*** RSASSA-PKCS1-v1_5
+**  Encoding Methods for Signatures with Appendix（签名编码方法）
+*** EMSA-PSS
+**** Encoding Operation
+**** Verification Operation
+*** EMSA-PKCS1-v1_5
+
+
 @endmindmap
 ```
 
@@ -81,4 +101,9 @@ stop
 
 @enduml
 ```
+
+
+
+# 从私钥提取公钥
+openssl rsa -in private_key.pem -pubout -out public_key.pem
 
