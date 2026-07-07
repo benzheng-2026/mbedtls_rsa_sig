@@ -1,10 +1,10 @@
 file(REMOVE_RECURSE
   "CMakeFiles/rsa_sig.dir/main.c.obj"
   "CMakeFiles/rsa_sig.dir/main.c.obj.d"
-  "librsa_oaep_encrypt.dll.a"
-  "rsa_oaep_encrypt.exe"
-  "rsa_oaep_encrypt.exe.manifest"
-  "rsa_oaep_encrypt.pdb"
+  "libsignature_RSASSA-PSS.dll.a"
+  "signature_RSASSA-PSS.exe"
+  "signature_RSASSA-PSS.exe.manifest"
+  "signature_RSASSA-PSS.pdb"
 )
 
 # Per-language clean rules from dependency scanning.

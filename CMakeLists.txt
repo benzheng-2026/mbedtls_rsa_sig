@@ -15,4 +15,4 @@ add_executable(rsa_sig main.c)
 target_link_libraries(rsa_sig PRIVATE mbedtls_lib)
 
 # ⭐ 修改输出 exe 名字
-set_target_properties(rsa_sig PROPERTIES OUTPUT_NAME "rsa_oaep_encrypt")
+set_target_properties(rsa_sig PROPERTIES OUTPUT_NAME "signature_RSASSA-PSS")

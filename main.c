@@ -4,12 +4,14 @@
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/platform.h"
 #include "mbedtls/error.h"
+#include "mbedtls/md.h"
 #include <string.h>
 #include <stdio.h>
 
-#define PLAINTEXT        "Hello, RSAES-OAEP encryption!"
-#define PLAINTEXT_LEN    strlen(PLAINTEXT)
-#define CIPHERTEXT_BUF   256
+#define MESSAGE          "Hello, RSASSA-PSS signature!"
+#define MESSAGE_LEN      strlen(MESSAGE)
+#define SIGNATURE_BUF    256
+#define HASH_LEN         32
 
 #define PRIVATE_KEY_PATH "private_key.pem"
 #define PUBLIC_KEY_PATH  "public_key.pem"
@@ -21,12 +23,11 @@ int main(void) {
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_pk_context pk_priv;
     mbedtls_pk_context pk_pub;
-    mbedtls_rsa_context *rsa_pub;
     mbedtls_rsa_context *rsa_priv;
-    unsigned char ciphertext[CIPHERTEXT_BUF];
-    unsigned char decrypted[CIPHERTEXT_BUF];
-    size_t decrypted_len;
-    const char *pers = "rsa_oaep_example";
+    unsigned char signature[SIGNATURE_BUF];
+    unsigned char mHash[HASH_LEN];
+    size_t signature_len;
+    const char *pers = "rsa_pss_example";
 
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
@@ -60,61 +61,85 @@ int main(void) {
     mbedtls_printf("私钥类型: %s\n", mbedtls_pk_get_name(&pk_priv));
     mbedtls_printf("公钥类型: %s\n", mbedtls_pk_get_name(&pk_pub));
 
-    rsa_pub = mbedtls_pk_rsa(pk_pub);
     rsa_priv = mbedtls_pk_rsa(pk_priv);
 
-    mbedtls_rsa_set_padding(rsa_pub, MBEDTLS_RSA_PKCS_V21, MBEDTLS_MD_SHA256);
     mbedtls_rsa_set_padding(rsa_priv, MBEDTLS_RSA_PKCS_V21, MBEDTLS_MD_SHA256);
 
-    mbedtls_printf("\n原始明文: %s\n", PLAINTEXT);
+    mbedtls_printf("\n原始消息: %s\n", MESSAGE);
+    mbedtls_printf("消息长度: %zu 字节\n", MESSAGE_LEN);
 
-    ret = mbedtls_rsa_rsaes_oaep_encrypt(
-            rsa_pub,
-            mbedtls_ctr_drbg_random, &ctr_drbg,
-            MBEDTLS_RSA_PUBLIC,
-            NULL, 0,
-            PLAINTEXT_LEN,
-            (const unsigned char *)PLAINTEXT,
-            ciphertext
-    );
+    mbedtls_printf("\n========== 预计算消息哈希 ==========\n");
+    ret = mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+                     (const unsigned char *)MESSAGE, MESSAGE_LEN,
+                     mHash);
     if (ret != 0) {
-        mbedtls_printf("加密失败: -0x%04X\n", -ret);
+        mbedtls_printf("哈希计算失败: -0x%04X\n", -ret);
         goto exit;
     }
-    mbedtls_printf("加密成功，密文长度: %d字节\n", (int)mbedtls_rsa_get_len(rsa_pub));
 
-    mbedtls_printf("密文数据(HEX):\n");
-    for (size_t i = 0; i < mbedtls_rsa_get_len(rsa_pub); i++) {
-        mbedtls_printf("%02X ", ciphertext[i]);
+    mbedtls_printf("消息哈希(SHA-256):\n");
+    for (size_t i = 0; i < HASH_LEN; i++) {
+        mbedtls_printf("%02X ", mHash[i]);
         if ((i + 1) % 16 == 0) {
             mbedtls_printf("\n");
         }
     }
     mbedtls_printf("\n");
 
-    ret = mbedtls_rsa_rsaes_oaep_decrypt(
+    mbedtls_printf("\n========== RSASSA-PSS 签名阶段 ==========\n");
+
+    ret = mbedtls_rsa_rsassa_pss_sign(
             rsa_priv,
             mbedtls_ctr_drbg_random, &ctr_drbg,
             MBEDTLS_RSA_PRIVATE,
-            NULL, 0,
-            &decrypted_len,
-            ciphertext,
-            decrypted,
-            sizeof(decrypted)
+            MBEDTLS_MD_SHA256,
+            HASH_LEN,
+            mHash,
+            signature
     );
     if (ret != 0) {
-        mbedtls_printf("解密失败: -0x%04X\n", -ret);
+        mbedtls_printf("签名失败: -0x%04X\n", -ret);
         goto exit;
     }
 
-    decrypted[decrypted_len] = '\0';
-    mbedtls_printf("\n解密结果: %s\n", decrypted);
-    if (strncmp((char *)decrypted, PLAINTEXT, PLAINTEXT_LEN) == 0) {
-        mbedtls_printf("验证成功: 解密结果与原始明文一致\n");
-    } else {
-        mbedtls_printf("验证失败: 解密结果与原始明文不一致\n");
-        ret = -1;
+    signature_len = mbedtls_rsa_get_len(rsa_priv);
+    mbedtls_printf("签名成功，签名长度: %zu 字节\n", signature_len);
+
+    mbedtls_printf("签名数据(HEX):\n");
+    for (size_t i = 0; i < signature_len; i++) {
+        mbedtls_printf("%02X ", signature[i]);
+        if ((i + 1) % 16 == 0) {
+            mbedtls_printf("\n");
+        }
     }
+    mbedtls_printf("\n");
+
+    mbedtls_printf("\n========== RSASSA-PSS 验证阶段 ==========\n");
+
+    mbedtls_rsa_context *rsa_pub = mbedtls_pk_rsa(pk_pub);
+    mbedtls_rsa_set_padding(rsa_pub, MBEDTLS_RSA_PKCS_V21, MBEDTLS_MD_SHA256);
+
+    ret = mbedtls_rsa_rsassa_pss_verify(
+            rsa_pub,
+            NULL, NULL,
+            MBEDTLS_RSA_PUBLIC,
+            MBEDTLS_MD_SHA256,
+            HASH_LEN,
+            mHash,
+            signature
+    );
+    if (ret != 0) {
+        mbedtls_printf("验证失败: -0x%04X\n", -ret);
+        mbedtls_printf("  可能原因:\n");
+        mbedtls_printf("  1. 消息被篡改\n");
+        mbedtls_printf("  2. 签名不匹配\n");
+        mbedtls_printf("  3. 密钥不配对\n");
+        goto exit;
+    }
+
+    mbedtls_printf("验证成功: 签名有效，消息完整性得到保证\n");
+    mbedtls_printf("  ✓ 消息未被篡改\n");
+    mbedtls_printf("  ✓ 签名由私钥持有者生成\n");
 
 exit:
     mbedtls_pk_free(&pk_pub);
