@@ -1,3 +1,4 @@
+
 @startuml
 skinparam backgroundColor #FEFEFE
 skinparam SequenceBoxBackgroundColor #E3F2FD
@@ -33,14 +34,28 @@ KeyFile --> PK: ASN.1 DER 数据
 PK -> PK: 解析 SubjectPublicKeyInfo
 PK --> Main: pk_pub.pk_ctx → rsa_context
 
-Main -> Main: rsa_priv = mbedtls_pk_rsa(pk_priv)\nrsa_pub = mbedtls_pk_rsa(pk_pub)
+Main -> Main: rsa_priv = mbedtls_pk_rsa(pk_priv)
 
 Main -> RSA: mbedtls_rsa_set_padding(\n  rsa_priv, PKCS_V21, SHA256)
 note right: ctx->padding = V21\nctx->hash_id = SHA256
 
 == 签名阶段 ==
 
-Main -> RSA: mbedtls_rsa_rsassa_pss_sign(\n  rsa_priv, ctr_drbg_random,\n  &ctr_drbg, PRIVATE,\n  SHA256, 0, MESSAGE, sig)
+group 预计算消息哈希
+  Main -> MD: mbedtls_md(SHA256,\n  MESSAGE, MESSAGE_LEN,\n  mHash)
+  note right
+    手动计算 H(MESSAGE)
+    输出: mHash[32]
+  end note
+  MD --> Main: mHash[32]
+end group
+
+Main -> RSA: mbedtls_rsa_rsassa_pss_sign(\n  rsa_priv, ctr_drbg_random,\n  &ctr_drbg, PRIVATE,\n  SHA256, HASH_LEN,\n  mHash, signature)
+note right
+  md_alg = SHA256
+  hashlen = 32
+  hash = mHash (已计算的哈希)
+end note
 
 activate RSA
 
@@ -84,59 +99,71 @@ Main -> Main: 打印签名 HEX
 
 == 验证阶段 ==
 
-Main -> RSA: mbedtls_rsa_set_padding(\n  rsa_pub, PKCS_V21, SHA256)
+Main -> Main: rsa_pub = mbedtls_pk_rsa(pk_pub)
 
-Main -> RSA: mbedtls_rsa_rsassa_pss_verify(\n  rsa_pub, NULL, NULL,\n  PUBLIC, SHA256, 0,\n  MESSAGE, signature)
+Main -> RSA: mbedtls_rsa_set_padding(\n  rsa_pub, PKCS_V21, SHA256)
+note right: ctx->padding = V21\nctx->hash_id = SHA256
+
+Main -> RSA: mbedtls_rsa_rsassa_pss_verify(\n  rsa_pub, NULL, NULL,\n  PUBLIC, SHA256, HASH_LEN,\n  mHash, signature)
+note right
+  md_alg = SHA256
+  hashlen = 32
+  hash = mHash (相同的预计算哈希)
+end note
 
 activate RSA
+
+RSA -> RSA: mgf1_hash_id = ctx->hash_id\n(= SHA256)
+
+RSA -> RSA: mbedtls_rsa_rsassa_pss_verify_ext(\n  ..., mgf1_hash_id=SHA256,\n  SALT_LEN_ANY, sig)
 
 group RSA 公钥运算
   RSA -> RSA: mbedtls_mpi_read_binary(&T, sig)\n(OS2IP)
   RSA -> RSA: mbedtls_mpi_exp_mod(\n  &T, &T, &E, &N, &RN)\n(RSAVP1: m=s^e mod n)
-  RSA -> RSA: mbedtls_mpi_write_binary(&T, buf)\n(I2OSP → EM')
+  RSA -> RSA: mbedtls_mpi_write_binary(&T, buf)\n(I2OSP)
 end group
 
-RSA -> RSA: 检查 buf[k-1] == 0xBC
+RSA -> RSA: 检查 buf[siglen-1] == 0xBC
 
-group 恢复 DB & 提取 salt
-  RSA -> RSA: hash_start = buf + k - hLen - 1
+group EMSA-PSS 解码验证
+  RSA -> RSA: 提取 hash_start 位置\n(siglen - hlen - 1)
 
-  RSA -> RSA: mgf_mask(buf, 223,\n  hash_start, 32, &md_ctx)
+  RSA -> RSA: mgf_mask(DB, 223,\n  hash_start, 32, &md_ctx)
   note right
-    dbMask = MGF1(H, 223)
-    DB = maskedDB ⊕ dbMask
-    (原地XOR恢复)
+    MGF1(H', 223):
+    用提取的 H' 重新生成 dbMask
+    DB_recovered = maskedDB ⊕ dbMask
   end note
 
-  RSA -> RSA: while(*p==0) p++\n跳过PS(190字节零)
-  RSA -> RSA: 检查 *p == 0x01
-  RSA -> RSA: p++ → 指向salt\nobserved_salt_len = 32
+  RSA -> RSA: 清除高位多余bit\nbuf[0] &= mask
+
+  RSA -> RSA: 扫描 PS 零填充\n找到 0x01 分隔符
+
+  RSA -> RSA: 提取 salt\n(observed_salt_len = 32)
+
+  RSA -> MD: Hash(0x00×8 || mHash || salt)
+  note right
+    重新计算 M' 的哈希:
+    H_calc = SHA256(0⁸ || mHash || salt)
+  end note
+  MD --> RSA: result[32]
+
+  RSA -> RSA: memcmp(hash_start, result, 32)
+  note right
+    比较提取的 H' 与
+    重新计算的 H_calc
+    相等 → 验证通过
+  end note
 end group
 
-group 重新计算 H' 并比较
-  RSA -> MD: Hash(MESSAGE)
-  MD --> RSA: mHash*[32]
-
-  RSA -> MD: Hash(0x00×8 || mHash* || salt)
-  MD --> RSA: H'[32]
-
-  RSA -> RSA: memcmp(H', H, 32)
-end group
-
-alt H' == H
-  RSA --> Main: return 0 (成功)
-  Main -> Main: ✓ 验证成功\n消息完整 + 身份认证
-else H' != H
-  RSA --> Main: return VERIFY_FAILED
-  Main -> Main: ✗ 验证失败
-end
-
+RSA --> Main: ret = 0 (验证成功)
 deactivate RSA
 
-== 清理阶段 ==
+Main -> Main: 打印验证结果
 
-Main -> PK: mbedtls_pk_free(&pk_pub)
-Main -> PK: mbedtls_pk_free(&pk_priv)
-Main -> Main: mbedtls_ctr_drbg_free()\nmbedtls_entropy_free()
+== 资源清理阶段 ==
+
+Main -> Main: mbedtls_pk_free(&pk_pub)\nmbedtls_pk_free(&pk_priv)
+Main -> Main: mbedtls_ctr_drbg_free(&ctr_drbg)\nmbedtls_entropy_free(&entropy)
 
 @enduml
