@@ -8,7 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#define MESSAGE          "Hello, RSASSA-PSS signature!"
+#define MESSAGE          "Hello, RSASSA-PKCS1-v1_5 signature!"
 #define MESSAGE_LEN      strlen(MESSAGE)
 #define SIGNATURE_BUF    256
 #define HASH_LEN         32
@@ -27,7 +27,7 @@ int main(void) {
     unsigned char signature[SIGNATURE_BUF];
     unsigned char mHash[HASH_LEN];
     size_t signature_len;
-    const char *pers = "rsa_pss_example";
+    const char *pers = "rsa_pkcs1v15_example";
 
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
@@ -63,7 +63,7 @@ int main(void) {
 
     rsa_priv = mbedtls_pk_rsa(pk_priv);
 
-    mbedtls_rsa_set_padding(rsa_priv, MBEDTLS_RSA_PKCS_V21, MBEDTLS_MD_SHA256);
+    mbedtls_rsa_set_padding(rsa_priv, MBEDTLS_RSA_PKCS_V15, MBEDTLS_MD_SHA256);
 
     mbedtls_printf("\n原始消息: %s\n", MESSAGE);
     mbedtls_printf("消息长度: %zu 字节\n", MESSAGE_LEN);
@@ -86,9 +86,9 @@ int main(void) {
     }
     mbedtls_printf("\n");
 
-    mbedtls_printf("\n========== RSASSA-PSS 签名阶段 ==========\n");
+    mbedtls_printf("\n========== RSASSA-PKCS1-v1_5 签名阶段 ==========\n");
 
-    ret = mbedtls_rsa_rsassa_pss_sign(
+    ret = mbedtls_rsa_rsassa_pkcs1_v15_sign(
             rsa_priv,
             mbedtls_ctr_drbg_random, &ctr_drbg,
             MBEDTLS_RSA_PRIVATE,
@@ -114,12 +114,12 @@ int main(void) {
     }
     mbedtls_printf("\n");
 
-    mbedtls_printf("\n========== RSASSA-PSS 验证阶段 ==========\n");
+    mbedtls_printf("\n========== RSASSA-PKCS1-v1_5 验证阶段 ==========\n");
 
     mbedtls_rsa_context *rsa_pub = mbedtls_pk_rsa(pk_pub);
-    mbedtls_rsa_set_padding(rsa_pub, MBEDTLS_RSA_PKCS_V21, MBEDTLS_MD_SHA256);
+    mbedtls_rsa_set_padding(rsa_pub, MBEDTLS_RSA_PKCS_V15, MBEDTLS_MD_SHA256);
 
-    ret = mbedtls_rsa_rsassa_pss_verify(
+    ret = mbedtls_rsa_rsassa_pkcs1_v15_verify(
             rsa_pub,
             NULL, NULL,
             MBEDTLS_RSA_PUBLIC,

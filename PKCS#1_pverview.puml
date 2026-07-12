@@ -17,18 +17,18 @@
 *** RSAES-OAEP
 *** RSAES-PKCS1-v1_5
 **  Signature Scheme with Appendix（签名方案）
-*** <color:green>RSASSA-PSS(主线)</color>
-*** RSASSA-PKCS1-v1_5
+*** RSASSA-PSS
+*** <color:green>RSASSA-PKCS1-v1_5(主线)</color>
 **  Encoding Methods for Signatures with Appendix（签名编码方法）
-*** <color:red>EMSA-PSS</color>
-**** <color:red>Encoding Operation</color>
-**** <color:red>Verification Operation</color>
-*** EMSA-PKCS1-v1_5
+*** EMSA-PSS
+**** Encoding Operation
+**** Verification Operation
+*** <color:red>EMSA-PKCS1-v1_5</color>
 
 ** Appendix B.  Supporting Techniques
 *** B.1. <color:red> Hash Functions</color>
-*** B.2. <color:red> Mask Generation Functions</color>
-**** B.2.1. <color:red> MGF1</color>
+*** B.2.  Mask Generation Functions
+**** B.2.1.  MGF1
 
 
 
