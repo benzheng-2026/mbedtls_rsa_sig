@@ -1,0 +1,158 @@
+@startuml
+skinparam backgroundColor #FEFEFE
+skinparam SequenceBoxBackgroundColor #E3F2FD
+skinparam ParticipantBackgroundColor #E8F5E9
+skinparam ArrowColor #333333
+skinparam NoteBackgroundColor #FFF9C4
+
+title RSASSA-PKCS1-v1_5 代码调用流程 (main.c → rsa.c)
+
+participant "main.c" as Main
+participant "pk.h\n(PK抽象层)" as PK
+participant "rsa.c\n(RSA底层)" as RSA
+participant "md.c\n(哈希模块)" as MD
+database "密钥文件\n.pem" as KeyFile
+
+== 初始化阶段 ==
+
+Main -> Main: mbedtls_entropy_init()\nmbedtls_ctr_drbg_init()
+Main -> Main: mbedtls_pk_init(&pk_priv)\nmbedtls_pk_init(&pk_pub)
+Main -> Main: mbedtls_ctr_drbg_seed(\n  &ctr_drbg, entropy_func,\n  &entropy, pers)
+
+== 密钥加载阶段 ==
+
+Main -> PK: mbedtls_pk_parse_keyfile(\n  &pk_priv, "private_key.pem")
+PK -> KeyFile: 读取 PEM 文件
+KeyFile --> PK: ASN.1 DER 数据
+PK -> PK: 解析 PKCS#8 私钥
+PK --> Main: pk_priv.pk_ctx → rsa_context
+
+Main -> PK: mbedtls_pk_parse_public_keyfile(\n  &pk_pub, "public_key.pem")
+PK -> KeyFile: 读取 PEM 文件
+KeyFile --> PK: ASN.1 DER 数据
+PK -> PK: 解析 SubjectPublicKeyInfo
+PK --> Main: pk_pub.pk_ctx → rsa_context
+
+Main -> Main: rsa_priv = mbedtls_pk_rsa(pk_priv)
+
+Main -> RSA: mbedtls_rsa_set_padding(\n  rsa_priv, PKCS_V15, SHA256)
+note right: ctx->padding = V15\nctx->hash_id = SHA256
+
+== 签名阶段 ==
+
+group 预计算消息哈希
+  Main -> MD: mbedtls_md(SHA256,\n  MESSAGE, MESSAGE_LEN,\n  mHash)
+  note right
+    手动计算 H(MESSAGE)
+    输出: mHash[32]
+  end note
+  MD --> Main: mHash[32]
+end group
+
+Main -> RSA: mbedtls_rsa_rsassa_pkcs1_v15_sign(\n  rsa_priv, ctr_drbg_random,\n  &ctr_drbg, PRIVATE,\n  SHA256, HASH_LEN,\n  mHash, signature)
+note right
+  md_alg = SHA256
+  hashlen = 32
+  hash = mHash (已计算的哈希)
+end note
+
+activate RSA
+
+group EMSA-PKCS1-v1_5 编码
+  RSA -> RSA: rsa_rsassa_pkcs1_v15_encode(\n  SHA256, 32, mHash, 256, sig)
+
+  RSA -> RSA: mbedtls_oid_get_oid_by_md(SHA256)
+  note right: 获取 SHA-256 OID\n2.16.840.1.101.3.4.2.1
+
+  RSA -> RSA: 构造 EM:\n0x00 || 0x01 || PS(0xFF×202)\n|| 0x00 || DigestInfo(T)
+  note right
+    DigestInfo ::= SEQUENCE {
+      digestAlgorithm { OID + NULL },
+      digest OCTET STRING(mHash)
+    }
+    tLen = 10 + oid_size + 32 = 51
+    PS长度 = 256 - 51 - 3 = 202
+  end note
+end group
+
+group RSA 私钥运算 + Lenstra防护
+  RSA -> RSA: mbedtls_rsa_private(\n  ctx, f_rng, p_rng, sig, sig_try)
+  note right
+    RSASP1: s = EM^d mod n
+    结果写入临时缓冲区 sig_try
+  end note
+
+  RSA -> RSA: mbedtls_rsa_public(\n  ctx, sig_try, verif)
+  note right
+    回验: m' = s^e mod n
+    结果写入 verif
+  end note
+
+  RSA -> RSA: mbedtls_safer_memcmp(\n  verif, sig, 256)
+  note right
+    常量时间比较
+    verif == 原始EM → 通过
+    不等 → PRIVATE_FAILED
+  end note
+
+  RSA -> RSA: memcpy(sig, sig_try, 256)
+  note right: 回验通过后才拷贝到输出
+end group
+
+RSA --> Main: signature[256]
+deactivate RSA
+
+Main -> Main: 打印签名 HEX
+
+== 验证阶段 ==
+
+Main -> Main: rsa_pub = mbedtls_pk_rsa(pk_pub)
+
+Main -> RSA: mbedtls_rsa_set_padding(\n  rsa_pub, PKCS_V15, SHA256)
+note right: ctx->padding = V15\nctx->hash_id = SHA256
+
+Main -> RSA: mbedtls_rsa_rsassa_pkcs1_v15_verify(\n  rsa_pub, NULL, NULL,\n  PUBLIC, SHA256, HASH_LEN,\n  mHash, signature)
+note right
+  md_alg = SHA256
+  hashlen = 32
+  hash = mHash (相同的预计算哈希)
+end note
+
+activate RSA
+
+group 构造期望的编码
+  RSA -> RSA: rsa_rsassa_pkcs1_v15_encode(\n  SHA256, 32, mHash, 256,\n  encoded_expected)
+  note right
+    用相同的 mHash 重新构造
+    EM_expected = 0x00||0x01||PS||0x00||T
+  end note
+end group
+
+group RSA 公钥运算
+  RSA -> RSA: mbedtls_rsa_public(\n  ctx, sig, encoded)
+  note right
+    RSAVP1: m = sig^e mod n
+    恢复出实际的编码消息
+  end note
+end group
+
+group 常量时间比较
+  RSA -> RSA: mbedtls_safer_memcmp(\n  encoded, encoded_expected, 256)
+  note right
+    逐字节异或比较
+    全等 → ret=0 (验证通过)
+    不等 → VERIFY_FAILED
+  end note
+end group
+
+RSA --> Main: ret = 0 (验证成功)
+deactivate RSA
+
+Main -> Main: 打印验证结果
+
+== 资源清理阶段 ==
+
+Main -> Main: mbedtls_pk_free(&pk_pub)\nmbedtls_pk_free(&pk_priv)
+Main -> Main: mbedtls_ctr_drbg_free(&ctr_drbg)\nmbedtls_entropy_free(&entropy)
+
+@enduml

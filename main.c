@@ -1,131 +1,151 @@
-#include <stdio.h>
-#include <string.h>
-#include "mbedtls/sha256.h"
 #include "mbedtls/rsa.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
+#include "mbedtls/platform.h"
+#include "mbedtls/error.h"
+#include "mbedtls/md.h"
+#include <string.h>
+#include <stdio.h>
 
-#define BUFFER_SIZE 1024 // 定义缓冲区大小
-#define RSA_KEY_SIZE 2048 // RSA 密钥长度
+#define MESSAGE          "Hello, RSASSA-PKCS1-v1_5 signature!"
+#define MESSAGE_LEN      strlen(MESSAGE)
+#define SIGNATURE_BUF    256
+#define HASH_LEN         32
 
-int main(int argc, char *argv[])
-{
-    if (argc != 4) {
-        printf("Usage: %s <filename> <private_key_file> <signature_output_file>\n", argv[0]);
-        return -1;
-    }
+#define PRIVATE_KEY_PATH "private_key.pem"
+#define PUBLIC_KEY_PATH  "public_key.pem"
 
-    const char *filename = argv[1];
-    const char *key_file = argv[2];
-    const char *sig_file = argv[3]; // 签名输出文件
+int main(void) {
+    int ret;
 
-    // 打开待签名的文件
-    FILE *file = fopen(filename, "rb");
-    if (!file) {
-        perror("Failed to open file");
-        return -1;
-    }
-
-    // 初始化熵源和随机数生成器
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_pk_context pk_priv;
+    mbedtls_pk_context pk_pub;
+    mbedtls_rsa_context *rsa_priv;
+    unsigned char signature[SIGNATURE_BUF];
+    unsigned char mHash[HASH_LEN];
+    size_t signature_len;
+    const char *pers = "rsa_pkcs1v15_example";
+
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
+    mbedtls_pk_init(&pk_priv);
+    mbedtls_pk_init(&pk_pub);
 
-    const char *pers = "rsa_sign"; // 个性化字符串
-    int ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                                    (const unsigned char *)pers, strlen(pers));
+    if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
+                                     (const unsigned char *)pers, strlen(pers))) != 0) {
+        mbedtls_printf("随机数生成器初始化失败: -0x%04X\n", -ret);
+        goto exit;
+    }
+
+    mbedtls_printf("正在从文件加载RSA私钥...\n");
+    ret = mbedtls_pk_parse_keyfile(&pk_priv, PRIVATE_KEY_PATH, NULL);
     if (ret != 0) {
-        printf("Failed to seed RNG: %d\n", ret);
-        goto cleanup;
+        mbedtls_printf("加载私钥失败: -0x%04X\n", -ret);
+        mbedtls_printf("请先使用OpenSSL生成密钥对:\n");
+        mbedtls_printf("  openssl genrsa -out private_key.pem 2048\n");
+        mbedtls_printf("  openssl rsa -in private_key.pem -pubout -out public_key.pem\n");
+        goto exit;
     }
 
-    // 加载私钥
-    mbedtls_pk_context pk;
-    mbedtls_pk_init(&pk);
-    ret = mbedtls_pk_parse_keyfile(&pk, key_file, NULL); // 不需要密码
+    mbedtls_printf("正在从文件加载RSA公钥...\n");
+    ret = mbedtls_pk_parse_public_keyfile(&pk_pub, PUBLIC_KEY_PATH);
     if (ret != 0) {
-        printf("Failed to load private key: %d\n", ret);
-        goto cleanup;
+        mbedtls_printf("加载公钥失败: -0x%04X\n", -ret);
+        goto exit;
     }
 
-    // 检查密钥是否为 RSA 类型
-    if (!mbedtls_pk_can_do(&pk, MBEDTLS_PK_RSA)) {
-        printf("Key is not an RSA key\n");
-        ret = -1;
-        goto cleanup;
-    }
+    mbedtls_printf("密钥加载成功！\n");
+    mbedtls_printf("私钥类型: %s\n", mbedtls_pk_get_name(&pk_priv));
+    mbedtls_printf("公钥类型: %s\n", mbedtls_pk_get_name(&pk_pub));
 
-    // 计算文件的 SHA256 哈希值
-    unsigned char buffer[BUFFER_SIZE];
-    unsigned char hash[32];
-    size_t bytes_read;
+    rsa_priv = mbedtls_pk_rsa(pk_priv);
 
-    mbedtls_sha256_context sha256_ctx;
-    mbedtls_sha256_init(&sha256_ctx);
-    mbedtls_sha256_starts_ret(&sha256_ctx, 0); // 初始化 SHA256 上下文
+    mbedtls_rsa_set_padding(rsa_priv, MBEDTLS_RSA_PKCS_V15, MBEDTLS_MD_SHA256);
 
-    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
-        mbedtls_sha256_update_ret(&sha256_ctx, buffer, bytes_read);
-    }
+    mbedtls_printf("\n原始消息: %s\n", MESSAGE);
+    mbedtls_printf("消息长度: %zu 字节\n", MESSAGE_LEN);
 
-    if (ferror(file)) {
-        perror("Error reading file");
-        ret = -1;
-        goto cleanup;
-    }
-
-    mbedtls_sha256_finish_ret(&sha256_ctx, hash); // 完成哈希计算
-    mbedtls_sha256_free(&sha256_ctx);
-
-    // 打印文件的 SHA256 哈希值
-    printf("File SHA256 Hash:\n");
-    for (int i = 0; i < 32; i++) {
-        printf("%02x", hash[i]);
-    }
-    printf("\n");
-
-    // 使用 RSA 私钥对哈希值进行签名
-    unsigned char signature[MBEDTLS_MPI_MAX_SIZE];
-    size_t sig_len;
-
-    ret = mbedtls_pk_sign(&pk, MBEDTLS_MD_SHA256, hash, 0,
-                          signature, &sig_len,
-                          mbedtls_ctr_drbg_random, &ctr_drbg);
+    mbedtls_printf("\n========== 预计算消息哈希 ==========\n");
+    ret = mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+                     (const unsigned char *)MESSAGE, MESSAGE_LEN,
+                     mHash);
     if (ret != 0) {
-        printf("Failed to sign: %d\n", ret);
-        goto cleanup;
+        mbedtls_printf("哈希计算失败: -0x%04X\n", -ret);
+        goto exit;
     }
 
-    // 输出签名结果（以十六进制形式）
-    printf("Signature:\n");
-    for (size_t i = 0; i < sig_len; i++) {
-        printf("%02x", signature[i]);
+    mbedtls_printf("消息哈希(SHA-256):\n");
+    for (size_t i = 0; i < HASH_LEN; i++) {
+        mbedtls_printf("%02X ", mHash[i]);
+        if ((i + 1) % 16 == 0) {
+            mbedtls_printf("\n");
+        }
     }
-    printf("\n");
+    mbedtls_printf("\n");
 
-    // 将签名保存为二进制文件
-    FILE *sig_output = fopen(sig_file, "wb");
-    if (!sig_output) {
-        perror("Failed to open signature output file");
-        ret = -1;
-        goto cleanup;
+    mbedtls_printf("\n========== RSASSA-PKCS1-v1_5 签名阶段 ==========\n");
+
+    ret = mbedtls_rsa_rsassa_pkcs1_v15_sign(
+            rsa_priv,
+            mbedtls_ctr_drbg_random, &ctr_drbg,
+            MBEDTLS_RSA_PRIVATE,
+            MBEDTLS_MD_SHA256,
+            HASH_LEN,
+            mHash,
+            signature
+    );
+    if (ret != 0) {
+        mbedtls_printf("签名失败: -0x%04X\n", -ret);
+        goto exit;
     }
 
-    if (fwrite(signature, 1, sig_len, sig_output) != sig_len) {
-        perror("Failed to write signature to file");
-        ret = -1;
-        fclose(sig_output);
-        goto cleanup;
+    signature_len = mbedtls_rsa_get_len(rsa_priv);
+    mbedtls_printf("签名成功，签名长度: %zu 字节\n", signature_len);
+
+    mbedtls_printf("签名数据(HEX):\n");
+    for (size_t i = 0; i < signature_len; i++) {
+        mbedtls_printf("%02X ", signature[i]);
+        if ((i + 1) % 16 == 0) {
+            mbedtls_printf("\n");
+        }
+    }
+    mbedtls_printf("\n");
+
+    mbedtls_printf("\n========== RSASSA-PKCS1-v1_5 验证阶段 ==========\n");
+
+    mbedtls_rsa_context *rsa_pub = mbedtls_pk_rsa(pk_pub);
+    mbedtls_rsa_set_padding(rsa_pub, MBEDTLS_RSA_PKCS_V15, MBEDTLS_MD_SHA256);
+
+    ret = mbedtls_rsa_rsassa_pkcs1_v15_verify(
+            rsa_pub,
+            NULL, NULL,
+            MBEDTLS_RSA_PUBLIC,
+            MBEDTLS_MD_SHA256,
+            HASH_LEN,
+            mHash,
+            signature
+    );
+    if (ret != 0) {
+        mbedtls_printf("验证失败: -0x%04X\n", -ret);
+        mbedtls_printf("  可能原因:\n");
+        mbedtls_printf("  1. 消息被篡改\n");
+        mbedtls_printf("  2. 签名不匹配\n");
+        mbedtls_printf("  3. 密钥不配对\n");
+        goto exit;
     }
 
-    fclose(sig_output);
+    mbedtls_printf("验证成功: 签名有效，消息完整性得到保证\n");
+    mbedtls_printf("  ✓ 消息未被篡改\n");
+    mbedtls_printf("  ✓ 签名由私钥持有者生成\n");
 
-    cleanup:
-    mbedtls_pk_free(&pk);
+exit:
+    mbedtls_pk_free(&pk_pub);
+    mbedtls_pk_free(&pk_priv);
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&entropy);
-    fclose(file);
+
     return ret;
 }

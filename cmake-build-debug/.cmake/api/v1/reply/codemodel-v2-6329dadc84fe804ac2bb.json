@@ -15,7 +15,8 @@
 					"source" : ".",
 					"targetIndexes" : 
 					[
-						0
+						0,
+						1
 					]
 				}
 			],
@@ -30,7 +31,8 @@
 					"name" : "mbedtls_hashtest",
 					"targetIndexes" : 
 					[
-						0
+						0,
+						1
 					]
 				}
 			],
@@ -38,8 +40,15 @@
 			[
 				{
 					"directoryIndex" : 0,
+					"id" : "mbedtls_lib::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-mbedtls_lib-Debug-5f39cd9a7a0f2e5809cb.json",
+					"name" : "mbedtls_lib",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
 					"id" : "rsa_sig::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-rsa_sig-Debug-7513bf44d5eea370e9f4.json",
+					"jsonFile" : "target-rsa_sig-Debug-378605133e2f1d03fc9b.json",
 					"name" : "rsa_sig",
 					"projectIndex" : 0
 				}

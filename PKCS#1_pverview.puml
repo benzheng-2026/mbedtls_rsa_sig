@@ -1,0 +1,37 @@
+@startmindmap
+* PKCS#1
+**  Key Types
+*** RSA Public Key
+*** RSA Private Key
+**  <color:red>Data Conversion Primitives （数据转换原语）</color>
+*** <color:red>I2OSP</color>
+*** <color:red>OS2IP</color>
+**  Cryptographic Primitives （密码原语）
+*** Encryption and Decryption Primitives（加解密原语）
+**** RSAEP
+**** RSADP
+*** <color:red>Signature and Verification Primitives（签名验证原语）</color>
+**** <color:red>RSASP1</color>
+**** <color:red>RSAVP1</color>
+**  Encryption Schemes（加解密）
+*** RSAES-OAEP
+*** RSAES-PKCS1-v1_5
+**  Signature Scheme with Appendix（签名方案）
+*** RSASSA-PSS
+*** <color:green>RSASSA-PKCS1-v1_5(主线)</color>
+**  Encoding Methods for Signatures with Appendix（签名编码方法）
+*** EMSA-PSS
+**** Encoding Operation
+**** Verification Operation
+*** <color:red>EMSA-PKCS1-v1_5</color>
+
+** Appendix B.  Supporting Techniques
+*** B.1. <color:red> Hash Functions</color>
+*** B.2.  Mask Generation Functions
+**** B.2.1.  MGF1
+
+
+
+
+
+@endmindmap

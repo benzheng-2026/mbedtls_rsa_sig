@@ -1,0 +1,113 @@
+@startuml
+'https://plantuml.com/activity-diagram-beta
+
+title RSASSA-PKCS1-v1_5 签名流程\n(RFC 8017 §8.2.1 / mbedtls rsa.c)
+
+start
+
+partition "输入准备" {
+  :输入: 消息 M, RSA 私钥 (n,d);
+  :选择哈希算法 Hash (如 SHA-256);
+}
+
+partition "步骤1: 消息哈希" {
+  :H = Hash(M);
+  note right
+    例: SHA-256 → 32字节
+    若输出"message too long"则终止
+  end note
+  if (哈希成功?) then (是)
+  else (否)
+    :输出 "message too long";
+    stop
+  endif
+}
+
+partition "步骤2: 构造 DigestInfo (DER编码)" {
+  :获取哈希算法 OID;
+  note right
+    SHA-256 OID:
+    2.16.840.1.101.3.4.2.1
+  end note
+  :构造 T = DER(DigestInfo);
+  note right
+    DigestInfo ::= SEQUENCE {
+      digestAlgorithm AlgorithmIdentifier,
+      digest OCTET STRING
+    }
+
+    T = TAG-SEQ + LEN [
+          TAG-SEQ + LEN [
+            TAG-OID + LEN [ OID ]
+            TAG-NULL + LEN [ NULL ]
+          ]
+          TAG-OCTET + LEN [ H ]
+        ]
+
+    tLen = 10 + oid_size + hashlen
+  end note
+}
+
+partition "步骤3: 长度检查" {
+  :emLen = RSA密钥字节长度;
+  if (emLen >= tLen + 11?) then (是)
+  else (否)
+    :输出 "encoded message length too short";
+    stop
+  endif
+}
+
+partition "步骤4: 生成填充 PS" {
+  :PS = 0xFF × (emLen - tLen - 3);
+  note right
+    PS 长度至少 8 字节
+    例: RSA-2048, SHA-256
+    PS = 256 - 51 - 3 = 202 字节
+  end note
+}
+
+partition "步骤5: 拼接编码消息 EM" {
+  :EM = 0x00 || 0x01 || PS || 0x00 || T;
+  note right
+    ┌──────┬──────┬─────────┬──────┬──────────┐
+    │ 0x00 │ 0x01 │ FF...FF │ 0x00 │DigestInfo│
+    └──────┴──────┴─────────┴──────┴──────────┘
+    ←—————————— emLen 字节 ——————————————→
+
+    固定头  标识   填充(≥8B) 分隔符  ASN.1结构
+  end note
+}
+
+partition "步骤6: RSA 私钥运算 (RSASP1)" {
+  :m = OS2IP(EM);
+  note right: 将字节串转为大整数
+  :s = m^d mod n;
+  note right
+    CRT加速 (可选):
+    s1 = m^dP mod p
+    s2 = m^dQ mod q
+    s = CRT(s1, s2)
+  end note
+  :S = I2OSP(s, emLen);
+  note right: 将大整数转回字节串
+}
+
+partition "防故障攻击验证 (mbedtls特有)" {
+  :用公钥验证: s^e mod n == EM ?;
+  note right
+    Lenstra攻击防护:
+    签名后立即用公钥回验
+    不一致则拒绝输出签名
+  end note
+  if (回验通过?) then (是)
+  else (否)
+    :丢弃签名, 返回错误;
+    stop
+  endif
+}
+
+:输出签名 S;
+
+stop
+
+@enduml
